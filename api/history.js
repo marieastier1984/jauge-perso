@@ -2,7 +2,7 @@
 // Lecture / écriture / suppression de l'historique dans Neon (Postgres).
 //
 // GET    /api/history          -> liste tout l'historique (trié par date desc)
-// POST   /api/history           body: { niveau, signaux: string[] }  -> ajoute un point
+// POST   /api/history           body: { niveau, signaux: string[], triggers?: string[] }  -> ajoute un point
 // DELETE /api/history?id=...    -> supprime un point
 // DELETE /api/history?all=true  -> efface tout l'historique
 
@@ -21,23 +21,24 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const rows = await sql(
-        "select id, created_at, niveau, signaux from signaux_historique order by created_at desc"
+        "select id, created_at, niveau, signaux, triggers from signaux_historique order by created_at desc"
       );
       return res.status(200).json({ history: rows });
     }
 
     if (req.method === "POST") {
-      const { niveau, signaux } = req.body || {};
+      const { niveau, signaux, triggers } = req.body || {};
       if (!LEVELS.includes(niveau)) {
         return res.status(400).json({ error: "Niveau invalide" });
       }
       if (!Array.isArray(signaux)) {
         return res.status(400).json({ error: "Le champ 'signaux' doit être un tableau" });
       }
+      const triggersArr = Array.isArray(triggers) ? triggers : [];
 
       const rows = await sql(
-        "insert into signaux_historique (niveau, signaux) values ($1, $2::jsonb) returning id, created_at, niveau, signaux",
-        [niveau, JSON.stringify(signaux)]
+        "insert into signaux_historique (niveau, signaux, triggers) values ($1, $2::jsonb, $3::jsonb) returning id, created_at, niveau, signaux, triggers",
+        [niveau, JSON.stringify(signaux), JSON.stringify(triggersArr)]
       );
       return res.status(201).json({ entry: rows[0] });
     }

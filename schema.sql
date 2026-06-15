@@ -13,8 +13,12 @@ create table if not exists signaux_historique (
   id          uuid primary key default gen_random_uuid(),
   created_at  timestamptz not null default now(),
   niveau      text not null check (niveau in ('vert', 'jaune', 'orange', 'rouge')),
-  signaux     jsonb not null default '[]'::jsonb  -- tableau de libellés de signaux cochés
+  signaux     jsonb not null default '[]'::jsonb,  -- tableau de libellés de signaux cochés
+  triggers    jsonb not null default '[]'::jsonb   -- tableau de libellés de facteurs déclencheurs cochés
 );
+
+-- Si la table existait déjà sans la colonne triggers (mise à jour) :
+alter table signaux_historique add column if not exists triggers jsonb not null default '[]'::jsonb;
 
 create index if not exists idx_signaux_historique_created_at
   on signaux_historique (created_at desc);
@@ -91,6 +95,37 @@ values
   ('SIG_DIARRHEE',          'Diarrhée associée', 'rouge', 'migraine', 'moyenne', 43),
   ('SIG_RELPAX_NECESSAIRE', 'Besoin de Relpax', 'rouge', 'migraine', 'forte', 44),
   ('SIG_ANNULATION_RDV',    'Obligation d''annuler', 'rouge', 'migraine', 'forte', 45)
+on conflict (id) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- Facteurs déclencheurs probables (triggers_probables)
+-- Référentiel + ajouts personnels. Cochés dans l'historique comme les signaux,
+-- mais sans couleur/niveau associé.
+-- -----------------------------------------------------------------------------
+
+create table if not exists triggers_definitions (
+  id          text primary key,           -- ex: "TRG_METEO", "custom-1718300000000"
+  label       text not null,
+  confiance   text check (confiance in ('faible', 'moyenne', 'forte', 'très forte')),
+  custom      boolean not null default false,
+  created_at  timestamptz not null default now(),
+  position    int not null default 0
+);
+
+create index if not exists idx_triggers_definitions_position
+  on triggers_definitions (position);
+
+delete from triggers_definitions where custom = false;
+
+insert into triggers_definitions (id, label, confiance, position) values
+  ('TRG_METEO',           'Changement météo', 'forte', 1),
+  ('TRG_CHALEUR',         'Chaleur', 'forte', 2),
+  ('TRG_ACCUMULATION',    'Accumulation de fatigue', 'forte', 3),
+  ('TRG_DECOMPRESSION',   'Décompression après une période intense', 'forte', 4),
+  ('TRG_HYPERFOCUS_LONG', 'Hyperfocus prolongé', 'moyenne', 5),
+  ('TRG_STRESS_EMOTION',  'Stress émotionnel (deuil, inquiétude…)', 'moyenne', 6),
+  ('TRG_LONG_VOYAGE',     'Long voyage', 'moyenne', 7),
+  ('TRG_EFFORT_CHALEUR',  'Effort physique + chaleur', 'moyenne', 8)
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------

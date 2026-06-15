@@ -9,8 +9,9 @@ App de suivi des signaux de fatigue / surchauffe / migraine, avec jauge visuelle
   - `api/classify.js` — appelle l'API Claude pour classer un signal décrit en texte libre dans une couleur (vert/jaune/orange/rouge)
   - `api/history.js` — lit/écrit/supprime l'historique dans Neon (Postgres)
   - `api/signals.js` — lit/ajoute/supprime les définitions de signaux (catégories vert/jaune/orange/rouge, par défaut + personnalisés) dans Neon
+  - `api/triggers.js` — lit/ajoute/supprime les facteurs déclencheurs probables (référentiel + personnalisés) dans Neon
   - `api/suggestions.js` — lit les actions par niveau, les activités de recharge (efficaces vs trompeuses) et les phrases anti-culpabilité
-- **Base de données** : Neon (Postgres), tables `signaux_historique`, `signaux_definitions`, `actions_reference`, `recharge_effective`, `phrases_anti_culpabilite`
+- **Base de données** : Neon (Postgres), tables `signaux_historique`, `signaux_definitions`, `triggers_definitions`, `actions_reference`, `recharge_effective`, `phrases_anti_culpabilite`
 
 ## Mise en place
 
@@ -46,21 +47,23 @@ L'app sera disponible sur `https://<projet>.vercel.app`.
   - une liste d'**actions concrètes** (avec un indicateur de coût énergétique pour jaune/orange)
   - pour le niveau orange, une distinction entre ce qui **recharge vraiment** et ce qui **ressemble à du repos mais recharge peu**
   - une **phrase anti-culpabilité**, qui change chaque jour
-- "Enregistrer ce point" sauvegarde l'état actuel (date, niveau, signaux) dans Neon, via `/api/history`
-- L'onglet Historique affiche les statistiques par niveau, les signaux les plus fréquents, et permet l'export CSV/JSON
+- Sous les signaux, une section **"Facteurs déclencheurs probables"** (météo, chaleur, hyperfocus prolongé…) à cocher également — ajoutables toi-même, partagés entre appareils
+- "Enregistrer ce point" sauvegarde l'état actuel (date, niveau, signaux, facteurs déclencheurs) dans Neon, via `/api/history`
+- L'onglet Historique affiche les statistiques par niveau, les signaux et facteurs déclencheurs les plus fréquents, et permet l'export CSV/JSON
 
 ## Données
 
 Tout vit dans Neon, donc accessible et cohérent depuis n'importe quel appareil :
-- `signaux_historique` : chaque point enregistré (date, niveau, signaux cochés)
+- `signaux_historique` : chaque point enregistré (date, niveau, signaux cochés, facteurs déclencheurs cochés)
 - `signaux_definitions` : la liste complète des signaux (par défaut + personnalisés), avec catégorie/couleur, groupe thématique et niveau de confiance
+- `triggers_definitions` : la liste des facteurs déclencheurs probables (par défaut + personnalisés), avec niveau de confiance
 - `actions_reference` : actions suggérées par niveau, avec coût énergétique
 - `recharge_effective` : activités efficaces vs trompeuses pour recharger
 - `phrases_anti_culpabilite` : phrases affichées en rotation
 
 Aucune clé API n'est exposée côté client : `ANTHROPIC_API_KEY` et `DATABASE_URL` restent uniquement dans les variables d'environnement Vercel, utilisées par les fonctions serverless.
 
-Les signaux par défaut (non personnalisés) ne peuvent pas être supprimés via l'interface — seuls les signaux personnalisés (`custom = true`) le peuvent.
+Les signaux et facteurs déclencheurs par défaut (non personnalisés) ne peuvent pas être supprimés via l'interface — seuls les éléments personnalisés (`custom = true`) le peuvent.
 
 ## Maintenance
 
@@ -73,9 +76,9 @@ Les signaux par défaut (non personnalisés) ne peuvent pas être supprimés via
 Si tu avais déjà déployé une version antérieure de la base :
 
 1. Réexécute `schema.sql` dans l'éditeur SQL Neon :
-   - les nouvelles tables (`actions_reference`, `recharge_effective`, `phrases_anti_culpabilite`) sont créées et peuplées
+   - les nouvelles tables (`actions_reference`, `recharge_effective`, `phrases_anti_culpabilite`, `triggers_definitions`) sont créées et peuplées
    - `signaux_definitions` est mise à jour : les anciens signaux par défaut (`custom = false`) sont remplacés par le nouveau référentiel (groupe thématique + niveau de confiance) ; tes signaux personnalisés (`custom = true`) sont conservés tels quels
-   - `signaux_historique` n'est pas touchée
-2. Redéploie le code (nouveaux fichiers `api/suggestions.js`, `api/signals.js` et `app.js` mis à jour)
+   - `signaux_historique` reçoit une nouvelle colonne `triggers` (tableau vide par défaut pour les entrées existantes), le reste n'est pas touché
+2. Redéploie le code (nouveaux fichiers `api/suggestions.js`, `api/triggers.js`, et `app.js`/`api/signals.js`/`api/history.js` mis à jour)
 
 Note : les libellés exacts des anciens signaux par défaut changent légèrement (reformulations, regroupements). Si ton historique référence un ancien libellé qui n'existe plus dans `signaux_definitions`, il reste affiché tel quel dans l'historique (texte libre), mais ne correspondra plus à une case à cocher actuelle.

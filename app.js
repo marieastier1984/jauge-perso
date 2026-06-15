@@ -94,6 +94,29 @@ async function apiDeleteSignal(id) {
   if (!res.ok) throw new Error("Échec de la suppression du signal");
 }
 
+async function apiGetTriggers() {
+  const res = await fetch("/api/triggers");
+  if (!res.ok) throw new Error("Échec du chargement des facteurs déclencheurs");
+  const data = await res.json();
+  return data.triggers || [];
+}
+
+async function apiAddTrigger(label) {
+  const res = await fetch("/api/triggers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!res.ok) throw new Error("Échec de l'ajout du facteur déclencheur");
+  const data = await res.json();
+  return data.trigger;
+}
+
+async function apiDeleteTrigger(id) {
+  const res = await fetch(`/api/triggers?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Échec de la suppression du facteur déclencheur");
+}
+
 async function apiGetHistory() {
   const res = await fetch("/api/history");
   if (!res.ok) throw new Error("Échec du chargement de l'historique");
@@ -101,11 +124,11 @@ async function apiGetHistory() {
   return data.history || [];
 }
 
-async function apiAddHistory(niveau, signaux) {
+async function apiAddHistory(niveau, signaux, triggers) {
   const res = await fetch("/api/history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ niveau, signaux }),
+    body: JSON.stringify({ niveau, signaux, triggers }),
   });
   if (!res.ok) throw new Error("Échec de l'enregistrement");
   const data = await res.json();
@@ -169,12 +192,13 @@ function exportJSON(history) {
 }
 
 function exportCSV(history) {
-  const rows = [["date", "niveau", "signaux"]];
+  const rows = [["date", "niveau", "signaux", "triggers"]];
   history.forEach(entry => {
     rows.push([
       entry.created_at,
       entry.niveau,
       (entry.signaux || []).join(" | "),
+      (entry.triggers || []).join(" | "),
     ]);
   });
   const content = rows.map(row => row.map(csvEscape).join(";")).join("\n");
@@ -247,6 +271,57 @@ function SignalSection({ level, signals, selectedIds, onToggle, onAdd, onDelete 
         <input
           type="text"
           placeholder="Ajouter un signal personnel…"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+        />
+        <button onClick={handleAdd}>Ajouter</button>
+      </div>
+    </div>
+  );
+}
+
+function TriggersSection({ triggers, selectedIds, onToggle, onAdd, onDelete }) {
+  const [draft, setDraft] = useState("");
+  const selectedCount = triggers.filter(t => selectedIds.has(t.id)).length;
+
+  const handleAdd = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onAdd(text);
+    setDraft("");
+  };
+
+  return (
+    <div className="section">
+      <div className="section-head">
+        <h2>Facteurs déclencheurs probables</h2>
+        <span className="count-pill">{selectedCount} sélectionné{selectedCount > 1 ? "s" : ""}</span>
+      </div>
+      <div className="chip-grid">
+        {triggers.map(t => (
+          <button
+            key={t.id}
+            className={`chip cat-trigger ${selectedIds.has(t.id) ? "selected" : ""}`}
+            onClick={() => onToggle(t.id)}
+            aria-pressed={selectedIds.has(t.id)}
+          >
+            {t.label}
+            {t.custom ? (
+              <span
+                className="chip-del"
+                onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}
+                role="button"
+                aria-label={`Supprimer ${t.label}`}
+              >✕</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      <div className="add-row">
+        <input
+          type="text"
+          placeholder="Ajouter un facteur déclencheur…"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
@@ -337,6 +412,18 @@ function HistoryView({ history, onDelete, onClear, loading, error }) {
       .slice(0, 8);
   }, [history]);
 
+  const topTriggers = useMemo(() => {
+    const counts = {};
+    history.forEach(h => {
+      (h.triggers || []).forEach(label => {
+        counts[label] = (counts[label] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+  }, [history]);
+
   if (loading) {
     return (
       <div className="history-section">
@@ -395,6 +482,18 @@ function HistoryView({ history, onDelete, onClear, loading, error }) {
         </div>
       )}
 
+      {topTriggers.length > 0 && (
+        <div className="top-signals">
+          <h2 className="display">Facteurs déclencheurs les plus fréquents</h2>
+          {topTriggers.map(([label, count]) => (
+            <div className="top-signal-row" key={label}>
+              <span>{label}</span>
+              <span className="top-signal-count">{count}×</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <h2 className="display" style={{ marginTop: 20 }}>Historique</h2>
       {history.map(entry => (
         <div className={`history-entry level-${entry.niveau}`} key={entry.id}>
@@ -410,6 +509,11 @@ function HistoryView({ history, onDelete, onClear, loading, error }) {
           <div className="history-entry-signals">
             {(entry.signaux && entry.signaux.length > 0) ? entry.signaux.join(" · ") : "Aucun signal coché"}
           </div>
+          {(entry.triggers && entry.triggers.length > 0) && (
+            <div className="history-entry-triggers">
+              Facteurs : {entry.triggers.join(" · ")}
+            </div>
+          )}
         </div>
       ))}
 
@@ -489,6 +593,10 @@ function App() {
   const [signalsLoading, setSignalsLoading] = useState(true);
   const [signalsError, setSignalsError] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [triggers, setTriggers] = useState([]);
+  const [triggersLoading, setTriggersLoading] = useState(true);
+  const [triggersError, setTriggersError] = useState(null);
+  const [selectedTriggerIds, setSelectedTriggerIds] = useState(new Set());
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
@@ -509,6 +617,15 @@ function App() {
       .then(rows => setSignals(rows))
       .catch(e => setSignalsError(e.message || "Erreur inconnue"))
       .finally(() => setSignalsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setTriggersLoading(true);
+    setTriggersError(null);
+    apiGetTriggers()
+      .then(rows => setTriggers(rows))
+      .catch(e => setTriggersError(e.message || "Erreur inconnue"))
+      .finally(() => setTriggersLoading(false));
   }, []);
 
   const refreshHistory = () => {
@@ -562,11 +679,53 @@ function App() {
       .catch(e => setSignalsError(e.message || "Erreur lors de la suppression"));
   };
 
-  const resetAll = () => setSelectedIds(new Set());
+  const toggleTrigger = (id) => {
+    setSelectedTriggerIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const addTrigger = (label) => {
+    apiAddTrigger(label)
+      .then(newTrigger => {
+        setTriggers(prev => [...prev, newTrigger]);
+        setSelectedTriggerIds(prev => {
+          const next = new Set(prev);
+          next.add(newTrigger.id);
+          return next;
+        });
+      })
+      .catch(e => setTriggersError(e.message || "Erreur lors de l'ajout"));
+  };
+
+  const deleteTrigger = (id) => {
+    apiDeleteTrigger(id)
+      .then(() => {
+        setTriggers(prev => prev.filter(t => t.id !== id));
+        setSelectedTriggerIds(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      })
+      .catch(e => setTriggersError(e.message || "Erreur lors de la suppression"));
+  };
+
+  const resetAll = () => {
+    setSelectedIds(new Set());
+    setSelectedTriggerIds(new Set());
+  };
 
   const selectedSignals = useMemo(
     () => signals.filter(s => selectedIds.has(s.id)),
     [signals, selectedIds]
+  );
+
+  const selectedTriggers = useMemo(
+    () => triggers.filter(t => selectedTriggerIds.has(t.id)),
+    [triggers, selectedTriggerIds]
   );
 
   const level = useMemo(() => computeOverallLevel(selectedSignals), [selectedSignals]);
@@ -579,7 +738,7 @@ function App() {
 
   const savePoint = () => {
     setSaveError(null);
-    apiAddHistory(level, selectedSignals.map(s => s.label))
+    apiAddHistory(level, selectedSignals.map(s => s.label), selectedTriggers.map(t => t.label))
       .then(entry => {
         setHistory(prev => [entry, ...prev]);
         setSavedFlash(true);
@@ -649,6 +808,21 @@ function App() {
               onDelete={deleteSignal}
             />
           ))}
+
+          {triggersLoading && (
+            <p className="signal-source-note">Chargement des facteurs déclencheurs…</p>
+          )}
+          {triggersError && (
+            <p className="save-error">Impossible de charger les facteurs déclencheurs ({triggersError})</p>
+          )}
+
+          <TriggersSection
+            triggers={triggers}
+            selectedIds={selectedTriggerIds}
+            onToggle={toggleTrigger}
+            onAdd={addTrigger}
+            onDelete={deleteTrigger}
+          />
 
           <div className="actions-row">
             <button className="btn-primary" onClick={savePoint}>Enregistrer ce point</button>
