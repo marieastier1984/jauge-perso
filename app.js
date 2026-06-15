@@ -3,7 +3,6 @@ const { useState, useMemo, useEffect } = React;
 // --- Storage keys -----------------------------------------------------------
 
 const STORAGE_SIGNALS = "jauge_signals_v1";
-const STORAGE_HISTORY = "jauge_history_v1";
 
 // --- Data model -----------------------------------------------------------
 
@@ -139,16 +138,45 @@ function loadSignals() {
   }
 }
 
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(STORAGE_HISTORY);
-    if (!raw) return [];
-    const stored = JSON.parse(raw);
-    if (!Array.isArray(stored)) return [];
-    return stored;
-  } catch (e) {
-    return [];
+async function apiGetHistory() {
+  const res = await fetch("/api/history");
+  if (!res.ok) throw new Error("Échec du chargement de l'historique");
+  const data = await res.json();
+  return data.history || [];
+}
+
+async function apiAddHistory(niveau, signaux) {
+  const res = await fetch("/api/history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ niveau, signaux }),
+  });
+  if (!res.ok) throw new Error("Échec de l'enregistrement");
+  const data = await res.json();
+  return data.entry;
+}
+
+async function apiDeleteHistory(id) {
+  const res = await fetch(`/api/history?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Échec de la suppression");
+}
+
+async function apiClearHistory() {
+  const res = await fetch("/api/history?all=true", { method: "DELETE" });
+  if (!res.ok) throw new Error("Échec de l'effacement");
+}
+
+async function apiClassify(text) {
+  const res = await fetch("/api/classify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signal: text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Échec de la classification");
   }
+  return res.json();
 }
 
 function formatDateTime(iso) {
@@ -188,9 +216,9 @@ function exportCSV(history) {
   const rows = [["date", "niveau", "signaux"]];
   history.forEach(entry => {
     rows.push([
-      entry.date,
-      entry.level,
-      entry.signals.join(" | "),
+      entry.created_at,
+      entry.niveau,
+      (entry.signaux || []).join(" | "),
     ]);
   });
   const content = rows.map(row => row.map(csvEscape).join(";")).join("\n");
@@ -286,17 +314,17 @@ function SuggestionCard({ level }) {
   );
 }
 
-function HistoryView({ history, onDelete, onClear }) {
+function HistoryView({ history, onDelete, onClear, loading, error }) {
   const stats = useMemo(() => {
     const counts = { vert: 0, jaune: 0, orange: 0, rouge: 0 };
-    history.forEach(h => { counts[h.level] = (counts[h.level] || 0) + 1; });
+    history.forEach(h => { counts[h.niveau] = (counts[h.niveau] || 0) + 1; });
     return counts;
   }, [history]);
 
   const topSignals = useMemo(() => {
     const counts = {};
     history.forEach(h => {
-      h.signals.forEach(label => {
+      (h.signaux || []).forEach(label => {
         counts[label] = (counts[label] || 0) + 1;
       });
     });
@@ -304,6 +332,25 @@ function HistoryView({ history, onDelete, onClear }) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8);
   }, [history]);
+
+  if (loading) {
+    return (
+      <div className="history-section">
+        <div className="history-empty">Chargement de l'historique…</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="history-section">
+        <div className="history-empty">
+          Impossible de charger l'historique pour le moment.<br />
+          ({error})
+        </div>
+      </div>
+    );
+  }
 
   if (history.length === 0) {
     return (
@@ -345,19 +392,19 @@ function HistoryView({ history, onDelete, onClear }) {
       )}
 
       <h2 className="display" style={{ marginTop: 20 }}>Historique</h2>
-      {history.slice().reverse().map(entry => (
-        <div className={`history-entry level-${entry.level}`} key={entry.id}>
+      {history.map(entry => (
+        <div className={`history-entry level-${entry.niveau}`} key={entry.id}>
           <div className="history-entry-head">
-            <span className="history-entry-date">{formatDateTime(entry.date)}</span>
+            <span className="history-entry-date">{formatDateTime(entry.created_at)}</span>
             <span>
-              <span className={`history-entry-level level-${entry.level}`}>
-                {LEVEL_LABELS[entry.level].name.split(" — ")[0]}
+              <span className={`history-entry-level level-${entry.niveau}`}>
+                {LEVEL_LABELS[entry.niveau].name.split(" — ")[0]}
               </span>
               <button className="history-entry-del" onClick={() => onDelete(entry.id)}>supprimer</button>
             </span>
           </div>
           <div className="history-entry-signals">
-            {entry.signals.length > 0 ? entry.signals.join(" · ") : "Aucun signal coché"}
+            {(entry.signaux && entry.signaux.length > 0) ? entry.signaux.join(" · ") : "Aucun signal coché"}
           </div>
         </div>
       ))}
@@ -367,20 +414,97 @@ function HistoryView({ history, onDelete, onClear }) {
   );
 }
 
+function ClassifySignal({ onAddAsSelected }) {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null); // { niveau, justification }
+  const [error, setError] = useState(null);
+
+  const handleClassify = async () => {
+    const value = text.trim();
+    if (!value) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const data = await apiClassify(value);
+      setResult(data);
+    } catch (e) {
+      setError(e.message || "Erreur lors de la classification");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdd = () => {
+    if (!result) return;
+    onAddAsSelected(result.niveau, text.trim());
+    setText("");
+    setResult(null);
+  };
+
+  return (
+    <div className="section classify-section">
+      <div className="section-head">
+        <h2>Décrire un signal</h2>
+      </div>
+      <div className="add-row">
+        <input
+          type="text"
+          placeholder="Ex : j'ai mal derrière l'œil gauche…"
+          value={text}
+          onChange={e => { setText(e.target.value); setResult(null); setError(null); }}
+          onKeyDown={e => { if (e.key === "Enter") handleClassify(); }}
+        />
+        <button onClick={handleClassify} disabled={loading || !text.trim()}>
+          {loading ? "…" : "Analyser"}
+        </button>
+      </div>
+
+      {error && <p className="classify-error">{error}</p>}
+
+      {result && (
+        <div className={`classify-result level-${result.niveau}`}>
+          <div className={`classify-badge level-${result.niveau}`}>
+            <span className={`dot dot-${result.niveau}`} />
+            {LEVEL_LABELS[result.niveau].name}
+          </div>
+          {result.justification && <p className="classify-justification">{result.justification}</p>}
+          <button className="btn-secondary classify-add-btn" onClick={handleAdd}>
+            Ajouter et cocher ce signal
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("now"); // "now" | "history"
   const [signals, setSignals] = useState(loadSignals);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [history, setHistory] = useState(loadHistory);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_SIGNALS, JSON.stringify(signals));
   }, [signals]);
 
+  const refreshHistory = () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    apiGetHistory()
+      .then(rows => setHistory(rows))
+      .catch(e => setHistoryError(e.message || "Erreur inconnue"))
+      .finally(() => setHistoryLoading(false));
+  };
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
-  }, [history]);
+    refreshHistory();
+  }, []);
 
   const toggle = (id) => {
     setSelectedIds(prev => {
@@ -398,6 +522,11 @@ function App() {
       next.add(id);
       return next;
     });
+    return id;
+  };
+
+  const addSignalFromClassify = (level, label) => {
+    addSignal(level, label);
   };
 
   const deleteSignal = (id) => {
@@ -425,24 +554,27 @@ function App() {
   }, [signals]);
 
   const savePoint = () => {
-    const entry = {
-      id: `entry-${Date.now()}`,
-      date: new Date().toISOString(),
-      level,
-      signals: selectedSignals.map(s => s.label),
-    };
-    setHistory(prev => [...prev, entry]);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2000);
+    setSaveError(null);
+    apiAddHistory(level, selectedSignals.map(s => s.label))
+      .then(entry => {
+        setHistory(prev => [entry, ...prev]);
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 2000);
+      })
+      .catch(e => setSaveError(e.message || "Erreur lors de l'enregistrement"));
   };
 
   const deleteHistoryEntry = (id) => {
-    setHistory(prev => prev.filter(e => e.id !== id));
+    apiDeleteHistory(id)
+      .then(() => setHistory(prev => prev.filter(e => e.id !== id)))
+      .catch(e => setHistoryError(e.message || "Erreur lors de la suppression"));
   };
 
   const clearHistory = () => {
     if (window.confirm("Effacer tout l'historique ? Cette action est irréversible.")) {
-      setHistory([]);
+      apiClearHistory()
+        .then(() => setHistory([]))
+        .catch(e => setHistoryError(e.message || "Erreur lors de l'effacement"));
     }
   };
 
@@ -460,6 +592,8 @@ function App() {
       {tab === "now" && (
         <React.Fragment>
           <Jauge level={level} selectedCount={selectedSignals.length} />
+
+          <ClassifySignal onAddAsSelected={addSignalFromClassify} />
 
           {selectedSignals.length > 0 && (
             <div className="suggestions">
@@ -490,19 +624,26 @@ function App() {
             <button className="btn-secondary" onClick={resetAll}>Tout désélectionner</button>
           </div>
           {savedFlash && <p className="save-confirm">Point enregistré dans l'historique.</p>}
+          {saveError && <p className="save-error">{saveError}</p>}
 
           <p className="signal-source-note">
             ⭐ = signal identifié comme particulièrement prédictif chez toi (12 à 48h avant une migraine).
           </p>
 
           <footer className="foot">
-            Tout est enregistré uniquement sur cet appareil, dans ce navigateur.
+            L'historique est enregistré sur le serveur (Neon) et accessible depuis n'importe quel appareil.
           </footer>
         </React.Fragment>
       )}
 
       {tab === "history" && (
-        <HistoryView history={history} onDelete={deleteHistoryEntry} onClear={clearHistory} />
+        <HistoryView
+          history={history}
+          onDelete={deleteHistoryEntry}
+          onClear={clearHistory}
+          loading={historyLoading}
+          error={historyError}
+        />
       )}
     </div>
   );

@@ -270,6 +270,58 @@ header.top p.tagline {
   gap: 10px;
 }
 
+.classify-section {
+  background: var(--paper-2);
+  border-radius: 14px;
+  margin: 0 20px;
+  padding: 14px 0 14px;
+}
+.classify-section .section-head { padding: 0 16px; }
+.classify-section .add-row { padding: 0 16px; }
+
+.classify-error {
+  margin: 8px 16px 0;
+  font-size: 12.5px;
+  color: var(--rouge);
+}
+
+.classify-result {
+  margin: 10px 16px 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.classify-result.level-vert   { background: var(--vert-bg);   border-color: var(--vert); }
+.classify-result.level-jaune  { background: var(--jaune-bg);  border-color: var(--jaune); }
+.classify-result.level-orange { background: var(--orange-bg); border-color: var(--orange); }
+.classify-result.level-rouge  { background: var(--rouge-bg);  border-color: var(--rouge); }
+
+.classify-badge {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.classify-justification {
+  font-size: 13px;
+  color: #6b6459;
+  margin: 6px 0 10px;
+  line-height: 1.5;
+}
+
+.classify-add-btn {
+  width: 100%;
+}
+
+.save-error {
+  padding: 10px 20px 0;
+  font-size: 12.5px;
+  color: var(--rouge);
+  text-align: center;
+}
+
 .btn-primary, .btn-secondary {
   flex: 1;
   border-radius: 12px;

@@ -1,0 +1,9 @@
+{
+  "name": "jauge-systeme",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jauge du système — suivi des signaux de fatigue/surchauffe/migraine",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.0"
+  }
+}

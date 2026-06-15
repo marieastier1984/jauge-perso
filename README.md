@@ -1,54 +1,57 @@
 # Jauge du système
 
-App de suivi des signaux de fatigue / surchauffe / migraine, avec jauge visuelle, suggestions adaptées et historique daté.
+App de suivi des signaux de fatigue / surchauffe / migraine, avec jauge visuelle, suggestions adaptées, classification par texte libre (IA) et historique daté stocké en base.
 
-## Contenu
+## Architecture
 
-- `index.html` — page principale
-- `style.css` — styles
-- `app.js` — logique (React, chargé via CDN + Babel standalone, pas de build nécessaire)
-- `manifest.json` — manifeste PWA (icône, nom, mode standalone)
-- `service-worker.js` — cache offline
-- `icon-192.png`, `icon-512.png` — icônes de l'app
+- **Front** : fichiers statiques (`index.html`, `style.css`, `app.js`), React + Babel via CDN, pas de build
+- **API** (dossier `api/`, fonctions serverless Vercel) :
+  - `api/classify.js` — appelle l'API Claude pour classer un signal décrit en texte libre dans une couleur (vert/jaune/orange/rouge)
+  - `api/history.js` — lit/écrit/supprime l'historique dans Neon (Postgres)
+- **Base de données** : Neon (Postgres), table `signaux_historique`
 
-## Déploiement
+## Mise en place
 
-Aucun build requis : ce sont des fichiers statiques.
+### 1. Neon
 
-### Option GitHub Pages
+1. Crée un nouveau projet (ou une nouvelle base dans un projet existant)
+2. Ouvre l'éditeur SQL et exécute le contenu de `schema.sql` (crée la table `signaux_historique`)
+3. Récupère la chaîne de connexion (`postgres://...`) depuis le dashboard Neon
 
-1. Crée un repo (ou un dossier dans un repo existant, ex. `jauge/`)
-2. Pousse tous ces fichiers à la racine du repo (ou du dossier choisi)
-3. Dans les Settings du repo → Pages → source = branche `main`, dossier `/` (ou `/jauge` si sous-dossier)
-4. L'app sera accessible à `https://<utilisateur>.github.io/<repo>/`
+### 2. Vercel
 
-### Option même pipeline que phecile.fr (FTP/OVH)
+1. Pousse ce dossier sur un repo GitHub
+2. Sur Vercel : "Add New Project" → importer le repo
+3. Aucune configuration de build nécessaire (statique + fonctions serverless détectées automatiquement via le dossier `api/`)
+4. Dans **Settings → Environment Variables**, ajoute :
+   - `DATABASE_URL` = la chaîne de connexion Neon (étape précédente)
+   - `ANTHROPIC_API_KEY` = ta clé API Anthropic (console.anthropic.com)
+5. Déployer
 
-Réutilise le même workflow GitHub Actions avec `SamKirkland/FTP-Deploy-Action` : pointe `server-dir` vers le dossier de destination sur le serveur OVH, et copie l'ensemble de ces fichiers.
+L'app sera disponible sur `https://<projet>.vercel.app`.
 
-### Installation sur le téléphone
+### 3. Installation sur le téléphone
 
-Une fois l'app accessible via une URL HTTPS :
-- **iOS (Safari)** : ouvrir l'URL → bouton Partager → "Sur l'écran d'accueil"
-- **Android (Chrome)** : ouvrir l'URL → menu ⋮ → "Ajouter à l'écran d'accueil" / "Installer l'application"
-
-Le `manifest.json` + `service-worker.js` permettent l'installation en PWA et un fonctionnement hors-ligne une fois la première visite effectuée.
-
-⚠️ Le service worker met en cache les fichiers locaux. Si tu modifies `app.js` ou `style.css` après déploiement, incrémente `CACHE_NAME` dans `service-worker.js` (ex. `jauge-cache-v2`) pour forcer la mise à jour côté utilisateurs.
-
-## Données
-
-Tout est stocké en local sur l'appareil (`localStorage`) :
-- les signaux personnalisés que tu ajoutes
-- l'historique des points enregistrés (date, niveau, signaux cochés)
-
-Rien n'est envoyé sur un serveur. Si tu changes de téléphone ou vides les données du navigateur, l'historique est perdu (pas de synchronisation prévue pour l'instant).
+- **iOS (Safari)** : ouvrir l'URL → Partager → "Sur l'écran d'accueil"
+- **Android (Chrome)** : ouvrir l'URL → menu ⋮ → "Installer l'application"
 
 ## Fonctionnement
 
-- Coche les signaux ressentis dans les 4 catégories (vert/jaune/orange/rouge)
-- La jauge se positionne automatiquement sur le niveau le plus élevé coché
-- Règle d'escalade : 3+ signaux cochés au même niveau (jaune ou orange) font monter la jauge d'un cran
+- Coche les signaux ressentis dans les 4 catégories (vert/jaune/orange/rouge), ou ajoute les tiens
+- **Décrire un signal** : tape une phrase libre (ex. "j'ai mal derrière l'œil gauche"), l'IA propose une couleur ; tu peux l'ajouter et la cocher directement
+- La jauge se positionne sur le niveau le plus élevé coché (règle d'escalade : 3+ signaux au même niveau jaune/orange font monter d'un cran)
 - Des suggestions concrètes s'affichent selon le niveau (préserver / recharger / limiter les dégâts)
-- "Enregistrer ce point" sauvegarde l'état actuel avec horodatage dans l'onglet Historique
-- L'onglet Historique montre les statistiques par niveau et les signaux les plus fréquents
+- "Enregistrer ce point" sauvegarde l'état actuel (date, niveau, signaux) dans Neon, via `/api/history`
+- L'onglet Historique affiche les statistiques par niveau, les signaux les plus fréquents, et permet l'export CSV/JSON
+
+## Données
+
+- L'historique vit dans Neon : accessible depuis n'importe quel appareil, persistant
+- Les signaux personnalisés (catégories vert/jaune/orange/rouge) restent en `localStorage` du navigateur — propres à chaque appareil
+- Aucune clé API n'est exposée côté client : `ANTHROPIC_API_KEY` et `DATABASE_URL` restent uniquement dans les variables d'environnement Vercel, utilisées par les fonctions serverless
+
+## Maintenance
+
+- Pour modifier la liste de signaux par défaut, le barème de suggestions ou les règles d'escalade : éditer `app.js` (constantes `DEFAULT_SIGNALS`, `SUGGESTIONS`, `computeOverallLevel`)
+- Pour ajuster le prompt de classification IA : `api/classify.js` (constante `SYSTEM_PROMPT`)
+- `service-worker.js` met en cache les fichiers statiques pour le mode hors-ligne ; incrémenter `CACHE_NAME` après toute modification de `app.js`/`style.css` pour forcer la mise à jour côté utilisateurs (les appels `/api/*` ne sont jamais mis en cache)
