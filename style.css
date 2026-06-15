@@ -421,6 +421,41 @@ header.top p.tagline {
   font-weight: bold;
 }
 
+.action-cost {
+  color: #b0a99c;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.recharge-block {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.recharge-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 8px 0 6px;
+}
+
+.recharge-yes { color: var(--vert); }
+.recharge-no { color: #a3927e; }
+
+.recharge-no-list li {
+  opacity: 0.75;
+}
+
+.pac-phrase {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-style: italic;
+  color: #6b6459;
+  text-align: center;
+}
+
 .signal-source-note {
   padding: 6px 20px 0;
   font-size: 11.5px;

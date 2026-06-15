@@ -1,9 +1,5 @@
 const { useState, useMemo, useEffect } = React;
 
-// --- Storage keys -----------------------------------------------------------
-
-const STORAGE_SIGNALS = "jauge_signals_v1";
-
 // --- Data model -----------------------------------------------------------
 
 const LEVELS = ["vert", "jaune", "orange", "rouge"];
@@ -17,94 +13,29 @@ const LEVEL_LABELS = {
 
 const STAR_LEVELS = { 3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐" };
 
-// Each signal: { id, label, level, star (optional 1-3), custom (optional bool) }
-const DEFAULT_SIGNALS = [
-  // Vert
-  { id: "v1", label: "Tu passes d'une activité à une autre sans difficulté", level: "vert" },
-  { id: "v2", label: "Tu manges quand tu as faim", level: "vert" },
-  { id: "v3", label: "Tu peux t'arrêter de travailler sans y retourner mentalement", level: "vert" },
-  { id: "v4", label: "Les rendez-vous restent des rendez-vous", level: "vert" },
-  { id: "v5", label: "Tu fais vélo / tricot / photo / travail avec plaisir, sans obsession", level: "vert" },
-
-  // Jaune
-  { id: "j1", label: "Tu n'as plus faim alors que tu as peu mangé", level: "jaune", star: 3 },
-  { id: "j2", label: "Tu attends une réponse (JP, mission, projet…)", level: "jaune", star: 3 },
-  { id: "j3", label: "Tu repousses un repas", level: "jaune" },
-  { id: "j4", label: "Tu oublies de boire", level: "jaune" },
-  { id: "j5", label: "« Encore 5 minutes » répété plusieurs fois", level: "jaune", star: 2 },
-  { id: "j6", label: "Tu vérifies souvent ton téléphone", level: "jaune", star: 2 },
-  { id: "j7", label: "Tu sais qu'il faudrait une pause mais tu ne la prends pas", level: "jaune" },
-  { id: "j8", label: "Tu te sens plus fatiguée que l'activité ne le justifie", level: "jaune" },
-  { id: "j9", label: "Tu commences à tourner en boucle sur un sujet", level: "jaune" },
-
-  // Orange
-  { id: "o1", label: "Tu arrêtes de travailler mais ton cerveau continue", level: "orange", star: 3 },
-  { id: "o2", label: "Tu es en tunnel depuis plusieurs heures", level: "orange" },
-  { id: "o3", label: "Série / tricot / changement de pièce… et ça continue quand même", level: "orange" },
-  { id: "o4", label: "Tu ressens un « manque » quand tu arrêtes de travailler", level: "orange" },
-  { id: "o5", label: "Tu as besoin d'une grosse sieste", level: "orange", star: 1 },
-  { id: "o6", label: "Tu es « sur les dents », prête à réagir", level: "orange" },
-  { id: "o7", label: "Mal à tolérer l'incertitude d'une réponse attendue", level: "orange" },
-  { id: "o8", label: "Douleur légère derrière un œil", level: "orange", star: 2 },
-  { id: "o9", label: "Bouche sèche inhabituelle", level: "orange" },
-  { id: "o10", label: "Tu te demandes ce que tu as fait de mal", level: "orange" },
-
-  // Rouge
-  { id: "r1", label: "Migraine installée au réveil ou dans la journée", level: "rouge" },
-  { id: "r2", label: "Douleur derrière les yeux", level: "rouge" },
-  { id: "r3", label: "Voile visuel", level: "rouge" },
-  { id: "r4", label: "Vomissements", level: "rouge" },
-  { id: "r5", label: "Diarrhée associée", level: "rouge" },
-  { id: "r6", label: "Fatigue écrasante", level: "rouge" },
-  { id: "r7", label: "Annulation d'activités ou de rendez-vous", level: "rouge" },
-  { id: "r8", label: "Besoin de Relpax et de dormir plusieurs heures", level: "rouge" },
-  { id: "r9", label: "Difficulté à conduire, réfléchir ou décider", level: "rouge" },
-];
-
-const SUGGESTIONS = {
+const SUGGESTION_FRAMING = {
   vert: {
     title: "Continue comme ça",
     question: "Rien à ajuster pour l'instant.",
-    items: [
-      "Profite de cette marge : c'est le bon moment pour les choses qui demandent de l'énergie.",
-      "Repère ce qui te fait du bien aujourd'hui — ça aide à le reconnaître plus tard.",
-    ],
   },
   jaune: {
     title: "Préserver — dépenser un peu moins d'énergie",
     question: "Qu'est-ce que je peux faire pour dépenser un peu moins d'énergie pendant les 2 prochaines heures ?",
-    items: [
-      "Commander plutôt que cuisiner",
-      "Remettre une tâche à demain",
-      "Réunion téléphonique au lieu d'un déplacement",
-      "Boire avant d'avoir soif, manger avant d'avoir faim",
-      "Pas besoin de tout arrêter : juste freiner la dépense",
-    ],
   },
   orange: {
     title: "Recharger — vraiment, pas juste faire une pause",
     question: "Qu'est-ce qui recharge vraiment mes batteries, là, maintenant ?",
-    items: [
-      "Dormir, même brièvement",
-      "Lire au lit",
-      "Une balade sans rien à produire",
-      "Voir quelqu'un avec qui tu n'as rien à prouver",
-      "Vélo vécu comme une aventure, pas comme une tâche",
-      "Éviter : série en pensant au travail, tricot en surveillant le téléphone, pause en attendant un message — ça ne recharge pas",
-    ],
   },
   rouge: {
     title: "Limiter les dégâts",
     question: "Comment je me soigne et je récupère, maintenant ?",
-    items: [
-      "Relpax si besoin",
-      "Repos, dans le noir si possible",
-      "Annule ou décale sans culpabiliser",
-      "Hydratation",
-      "Pas le moment de comprendre — juste de récupérer",
-    ],
   },
 };
+
+const VERT_TIPS = [
+  "Profite de cette marge : c'est le bon moment pour les choses qui demandent de l'énergie.",
+  "Repère ce qui te fait du bien aujourd'hui — ça aide à le reconnaître plus tard.",
+];
 
 const LEVEL_INDEX = { vert: 0, jaune: 1, orange: 2, rouge: 3 };
 const LEVEL_FILL = { vert: 100, jaune: 68, orange: 38, rouge: 12 };
@@ -126,16 +57,41 @@ function computeOverallLevel(selectedSignals) {
   return LEVELS[maxIdx];
 }
 
-function loadSignals() {
-  try {
-    const raw = localStorage.getItem(STORAGE_SIGNALS);
-    if (!raw) return DEFAULT_SIGNALS;
-    const stored = JSON.parse(raw);
-    if (!Array.isArray(stored) || stored.length === 0) return DEFAULT_SIGNALS;
-    return stored;
-  } catch (e) {
-    return DEFAULT_SIGNALS;
-  }
+async function apiGetSuggestions() {
+  const res = await fetch("/api/suggestions");
+  if (!res.ok) throw new Error("Échec du chargement des suggestions");
+  return res.json();
+}
+
+async function apiGetSignals() {
+  const res = await fetch("/api/signals");
+  if (!res.ok) throw new Error("Échec du chargement des signaux");
+  const data = await res.json();
+  // Normalize 'niveau' (DB) -> 'level' (front-end naming)
+  return (data.signals || []).map(s => ({
+    id: s.id,
+    label: s.label,
+    level: s.niveau,
+    star: s.star || undefined,
+    custom: !!s.custom,
+  }));
+}
+
+async function apiAddSignal(niveau, label) {
+  const res = await fetch("/api/signals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ niveau, label }),
+  });
+  if (!res.ok) throw new Error("Échec de l'ajout du signal");
+  const data = await res.json();
+  const s = data.signal;
+  return { id: s.id, label: s.label, level: s.niveau, star: s.star || undefined, custom: !!s.custom };
+}
+
+async function apiDeleteSignal(id) {
+  const res = await fetch(`/api/signals?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Échec de la suppression du signal");
 }
 
 async function apiGetHistory() {
@@ -301,15 +257,63 @@ function SignalSection({ level, signals, selectedIds, onToggle, onAdd, onDelete 
   );
 }
 
-function SuggestionCard({ level }) {
-  const data = SUGGESTIONS[level];
+function SuggestionCard({ level, suggestions }) {
+  const framing = SUGGESTION_FRAMING[level];
+  const actions = (suggestions.actions || []).filter(a => a.niveau === level);
+  const recharge = suggestions.recharge || [];
+  const phrases = suggestions.phrases || [];
+
+  // Pick a stable-ish phrase: rotate by day so it doesn't change on every render
+  const phrase = useMemo(() => {
+    if (phrases.length === 0) return null;
+    const dayIndex = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    return phrases[dayIndex % phrases.length];
+  }, [phrases]);
+
+  if (level === "vert") {
+    return (
+      <div className={`sugg-card level-${level}`}>
+        <h3>{framing.title}</h3>
+        <p className="question">{framing.question}</p>
+        <ul>
+          {VERT_TIPS.map((item, i) => <li key={i}>{item}</li>)}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div className={`sugg-card level-${level}`}>
-      <h3>{data.title}</h3>
-      <p className="question">{data.question}</p>
-      <ul>
-        {data.items.map((item, i) => <li key={i}>{item}</li>)}
-      </ul>
+      <h3>{framing.title}</h3>
+      <p className="question">{framing.question}</p>
+
+      {actions.length > 0 && (
+        <ul>
+          {actions.map(a => (
+            <li key={a.id}>
+              {a.label}
+              {a.cout ? <span className="action-cost"> {"·".repeat(a.cout)}</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {level === "orange" && recharge.length > 0 && (
+        <div className="recharge-block">
+          <p className="recharge-label recharge-yes">Ce qui recharge vraiment :</p>
+          <ul>
+            {recharge.filter(r => r.efficace).map(r => <li key={r.id}>{r.activite}</li>)}
+          </ul>
+          <p className="recharge-label recharge-no">Ressemble à du repos mais recharge peu :</p>
+          <ul className="recharge-no-list">
+            {recharge.filter(r => !r.efficace).map(r => <li key={r.id}>{r.activite}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {phrase && (
+        <p className="pac-phrase">{phrase.phrase}</p>
+      )}
     </div>
   );
 }
@@ -481,17 +485,31 @@ function ClassifySignal({ onAddAsSelected }) {
 
 function App() {
   const [tab, setTab] = useState("now"); // "now" | "history"
-  const [signals, setSignals] = useState(loadSignals);
+  const [signals, setSignals] = useState([]);
+  const [signalsLoading, setSignalsLoading] = useState(true);
+  const [signalsError, setSignalsError] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [suggestions, setSuggestions] = useState({ actions: [], recharge: [], phrases: [] });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_SIGNALS, JSON.stringify(signals));
-  }, [signals]);
+    apiGetSuggestions()
+      .then(data => setSuggestions(data))
+      .catch(() => {}); // non-bloquant : la carte reste utilisable sans, juste plus sobre
+  }, []);
+
+  useEffect(() => {
+    setSignalsLoading(true);
+    setSignalsError(null);
+    apiGetSignals()
+      .then(rows => setSignals(rows))
+      .catch(e => setSignalsError(e.message || "Erreur inconnue"))
+      .finally(() => setSignalsLoading(false));
+  }, []);
 
   const refreshHistory = () => {
     setHistoryLoading(true);
@@ -515,14 +533,16 @@ function App() {
   };
 
   const addSignal = (level, label) => {
-    const id = `custom-${level}-${Date.now()}`;
-    setSignals(prev => [...prev, { id, label, level, custom: true }]);
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    return id;
+    apiAddSignal(level, label)
+      .then(newSignal => {
+        setSignals(prev => [...prev, newSignal]);
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          next.add(newSignal.id);
+          return next;
+        });
+      })
+      .catch(e => setSignalsError(e.message || "Erreur lors de l'ajout"));
   };
 
   const addSignalFromClassify = (level, label) => {
@@ -530,12 +550,16 @@ function App() {
   };
 
   const deleteSignal = (id) => {
-    setSignals(prev => prev.filter(s => s.id !== id));
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+    apiDeleteSignal(id)
+      .then(() => {
+        setSignals(prev => prev.filter(s => s.id !== id));
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      })
+      .catch(e => setSignalsError(e.message || "Erreur lors de la suppression"));
   };
 
   const resetAll = () => setSelectedIds(new Set());
@@ -603,8 +627,15 @@ function App() {
                   ? "Pas de signal d'alerte particulier."
                   : "D'après les signaux cochés, voici une piste."}
               </p>
-              <SuggestionCard level={level} />
+              <SuggestionCard level={level} suggestions={suggestions} />
             </div>
+          )}
+
+          {signalsLoading && (
+            <p className="signal-source-note">Chargement des signaux…</p>
+          )}
+          {signalsError && (
+            <p className="save-error">Impossible de charger les signaux ({signalsError})</p>
           )}
 
           {LEVELS.map(l => (
